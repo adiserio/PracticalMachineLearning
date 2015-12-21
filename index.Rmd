@@ -1,22 +1,129 @@
 ---
 title: "Practical Machine Learning Course Project"
 author: "Angela Di Serio"
-date: "December 8, 2015"
+date: "December 2015"
 output: html_document
 ---
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Introduction
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is possible to collect a large amount of data about personal activity. These type of devices are also used by a group of enthusiasts who take measurements about themselves regularly to improve their health and to find patterns in their behavior. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+In this project we used data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: 
 
-```{r}
-summary(cars)
+* A: Exactly according to the specification
+* B: Throwing the elbows to the front 
+* C: Lifting the dumbbell only halfway
+* D: Lowering the dumbbell only halfway
+* E: Throwing the hips to the front
+
+The goal of this project is to predict the manner in which they did the exercise using machine learning algorithms. 
+
+## System Information
+The analysis of this study was performed on the following system:
+``` {r Info}
+sessionInfo()
 ```
 
-You can also embed plots, for example:
+The following packages were used for the analysis:
+``` {r Loadpackages, warnings=FALSE}
+library(caret)
+library(randomForest)
 
-```{r, echo=FALSE}
-plot(cars)
+```
+## Getting and Cleaning Data
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+. The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+. The following code can be used to download the data for further processing.
+
+``` {r GettingData}
+setwd("~/Coursera/Data Science/8_Practical Machine Learning/Proyecto/PracticalMachineLearning")
+if(!file.exists("pml-training.csv")){
+   download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv","pml-training.csv",method="libcurl")
+}
+
+if(!file.exists("pml-testing.csv")){
+   download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv","pml-testing.csv",method="libcurl")
+}
+
+```
+The columns with mostly  NA values are removed from the training dataset. The first seven columns are not considered since they contain irrelevant information for prediction. The training data set is split into a training and testing dataset with a 60/40 proportion. The same columns are also removed from the testing dataset that it will be used for prediction. 
+
+``` {r ReadCleanData, cache=TRUE}
+# read training dataset and transform NA, #DIV/0! and NULL character as Missing Values
+pml_training<-read.csv("pml-training.csv", na.strings =c("NA","#DIV/0!",""))
+
+# Compute number of NA in each column  
+numberOfNA <- colSums(is.na(pml_training))     
+
+# predictors with more than 95% of NAs are not considered in our models
+pml_training<- pml_training[,numberOfNA<0.95*dim(pml_training)[1]] 
+
+# First 7 columns are irrelevant for prediction and there are not considered
+pml_training<- pml_training[,-c(1:7)]   
+pml_training[,1:52]<-lapply(pml_training[,1:52],as.numeric)
+
+set.seed(123)          # set the seed for reproducibility purpose
+
+# Split the training dataset in Training and Testing sets
+inTrain<-createDataPartition(y=pml_training$classe,p=0.6,list=FALSE)
+training<-pml_training[inTrain,]
+testing<-pml_training[-inTrain,]
+
+# Read dataset that it will be used to predict  
+dataTest<-read.csv("pml-testing.csv", na.strings =c("NA","#DIV/0!",""))
+
+# We use the same columns/predictors considered in the training dataset 
+dataTest<-dataTest[,names(dataTest) %in% names(training)]
+dataTest$classe <- 1
+dataTest[,1:52]<-lapply(dataTest[,1:52],as.numeric)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+## Prediction Models
+Two machine learning algorithms are used to predict the manner in which a person does the Unilateral Dumbbell Biceps Curl:
+
+* Bootstrap aggregating
+* Random forest
+
+### Bootstrap Aggretating
+A Bootstrap aggregating approach is used as first alternative because it improves the stability and accuracy of machine learning algorithms. It also reduces variance and helps to avoid overfittin
+
+
+``` {r Bootstra,cache=TRUE}
+set.seed(123)
+treebag <-bag(subset( training, select = -c(classe)), training$classe, B=10, bagControl=bagControl(fit=ctreeBag$fit,predict=ctreeBag$pred, aggregate=ctreeBag$aggregate))
+
+
+test_pred = predict(treebag,subset(testing,select=-c(classe)))
+outOfSampleAccuracy <- sum(test_pred == testing$classe)/length(test_pred)
+sal<-confusionMatrix(test_pred,testing$classe)
+sal
+predict(treebag,subset(dataTest,select=-c(classe)))
+
+```
+
+The bootstrap agregation model has an overall accuracy of `r round(sal$overall[1],4)*100`% on the testing set. The out of sample error is around `r  100-round(outOfSampleAccuracy,4)*100`%. Looking at the different sensitivities and specificities it is able to predict all forms of performing the exercise.
+
+### Random Forest
+The second approach is the Random Forest Model.
+
+``` {r RandomForestModel, cache=TRUE}
+set.seed(123)
+RFModel <- randomForest(classe ~. , data=training)
+RFModel
+
+test_predRF <-predict(RFModel,testing)
+salRF<-confusionMatrix(test_predRF,testing$classe)
+salRF
+
+predict(RFModel,subset(dataTest,select=-c(classe)))
+
+```
+The Random Forest model has an overall accuracy of `r round(salRF$overall[1],4)*100`% on the testing set. The out of sample error is around `r  100-round(salRF$overall[1],4)*100`%. 
+
+## Conclussion
+Based on results, the Random Forest model performed a little bit better than bootstrap aggregation. The random forest confusion matrix gives an accuracy of `r round(salRF$overall[1],4)*100`%.
+
+
